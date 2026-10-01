@@ -3657,8 +3657,7 @@
   }
 
     ];
-
-             const searchBar = document.getElementById('searchBar');
+    const searchBar = document.getElementById('searchBar');
     const resultsHub = document.getElementById('resultsHub');
     const themeToggle = document.getElementById('themeToggle');
     const voiceBtn = document.getElementById('voiceBtn');
@@ -3710,15 +3709,23 @@
             localStorage.removeItem('sos_active_notes');
         });
     }
-    // TEXT-TO-SPEECH AMPLIFIER (SPEAKS PROTOCOLS OUT LOUD ON SEARCH)
+    // TEXT-TO-SPEECH AMPLIFIER (SPEAKS PROTOCOLS OUT LOUD ON USER GESTURE)
     function speakOutLoud(text) {
         window.speechSynthesis.cancel(); // Instantly flushes old audio tracks to prevent hardware lag
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'en-US';
         utterance.rate = 1.0;
-        utterance.volume = 1.0; // Forces maximum speaker output
+        utterance.volume = 1.0; // Forces maximum hardware speaker output
         window.speechSynthesis.speak(utterance);
     }
+
+    // ONE-CLICK TOUCH READOUT CONTROLLER
+    window.readCardOutLoud = function(name) {
+        const target = localDiseases.find(d => d.name === name);
+        if (target) {
+            speakOutLoud(`Emergency target condition selected. ${target.name}. Key symptoms: ${target.symptoms}. Immediate first aid instructions: ${target.solution}`);
+        }
+    };
 
     // 2. CORE SEARCH ENGINE WITH AUTO AUDIO FEEDBACK
     function processSearch(autoSpeak = false) {
@@ -3739,15 +3746,18 @@
 
         if (matches.length === 0) {
             resultsHub.innerHTML = '<div class="empty-state">No matching emergency details found.</div>';
+            if (autoSpeak) { speakOutLoud("No matching medical details found. Please check spelling."); }
             return;
         }
 
         matches.forEach((item, index) => {
             const element = document.createElement('div');
             element.className = 'card';
+            element.setAttribute('onclick', `readCardOutLoud('${item.name}')`);
+            element.style.cursor = 'pointer';
             element.innerHTML = `
-                <button class="copy-card-btn" onclick="copyBlueprint('${item.name}')">📋 Copy Blueprint</button>
-                <div class="card-title">${item.name}</div>
+                <button class="copy-card-btn" onclick="event.stopPropagation(); copyBlueprint('${item.name}')">📋 Copy Blueprint</button>
+                <div class="card-title">${item.name} <span style="font-size:14px; color:var(--accent); font-weight:normal;">🔊 (Tap card to speak)</span></div>
                 <div class="tag">📂 ${item.category}</div>
                 <div class="heading">⚠️ Key Symptoms:</div>
                 <div class="symptoms-desc">${item.symptoms}</div>
@@ -3756,9 +3766,9 @@
             `;
             resultsHub.appendChild(element);
 
-            // Speaks the very first matching profile solution out loud during voice search actions
+            // Automatically speaks the first matching profile solution out loud during voice search actions
             if (index === 0 && autoSpeak) {
-                speakOutLoud(`Emergency first aid protocol for ${item.name}. Solution steps are: ${item.solution}`);
+                speakOutLoud(`Found protocol for ${item.name}. Solution steps are: ${item.solution}`);
             }
         });
     }
@@ -3815,7 +3825,7 @@
         alarmInterval = setInterval(shoutHelpMe, 2200);
     }
     if (alarmBtn) { alarmBtn.addEventListener('click', executeVoiceAlarm); }
-    // 5. MASTER HANDS-FREE EMERGENCY VOICE COMMAND CONTROLLER (PRONUNCIATION TOLERANT)
+    // 5. MASTER HANDS-FREE GLOBAL VOICE CONTROLLER (WITH CUSTOM "TELL ME PLEASE" AUDIO PROMPT)
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
@@ -3823,12 +3833,15 @@
         recognition.lang = 'en-US';
 
         voiceBtn.addEventListener('click', () => {
-            speakOutLoud("Voice controls active. State your emergency directive now.");
+            // 🌟 CUSTOM AUDIO PROMPT TRIC: Replaces default generic noise with a clear human request
+            speakOutLoud("Tell me please");
+
+            // Wait 1.1 seconds for the phrase to finish speaking before opening the microphone pipeline cleanly
             setTimeout(() => {
                 voiceBtn.innerHTML = "🛑 Listening...";
                 voiceBtn.style.color = "#d32f2f";
                 recognition.start();
-            }, 1300);
+            }, 1100);
         });
 
         recognition.onresult = (event) => {
@@ -3866,7 +3879,7 @@
                 if (alarmInterval) { executeVoiceAlarm(); }
             }
             else {
-                // If it's not a shortcut directive, search the 500 records directly
+                // Default search route: transforms vocal command inputs into dictionary lookups
                 searchBar.value = command;
                 processSearch(true);
             }
