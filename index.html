@@ -153,7 +153,7 @@
 <script>
     const localDiseases = [
 
-        
+
       {
         "id": 1,
         "category": "Heart Failure & Heart Attack Category",
@@ -3666,19 +3666,12 @@
     const suggestionsBox = document.getElementById('suggestionsBox');
     const alarmBtn = document.getElementById('alarmBtn');
     const pdfBtn = document.getElementById('pdfBtn');
-    const shareLocationBtn = document.getElementById('shareLocationBtn');
-    const findHospitalBtn = document.getElementById('findHospitalBtn');
 
     let activeCategory = 'all';
-    let audioCtx = null;
     let alarmInterval = null;
+    let recognition = null;
 
-    // REQUEST NATIVE PUSH BROADCAST AUTHORIZATION
-    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-        Notification.requestPermission();
-    }
-
-    // 1. DYNAMIC COLOR MODE (Dark/Light Switch)
+    // 1. DYNAMIC COLOR MODE (Dark/Light Switch Layout Handler)
     themeToggle.addEventListener('click', () => {
         const isDark = document.body.getAttribute('data-theme') === 'dark';
         if (isDark) {
@@ -3698,7 +3691,8 @@
     }
     setInterval(updateDashboardClock, 1000);
     updateDashboardClock();
-       // LOCALSTORAGE EMERGENCY NOTES PAD LOGIC
+
+    // LOCALSTORAGE EMERGENCY NOTES PAD LOGIC
     const emergencyNotes = document.getElementById('emergencyNotes');
     const clearNotesBtn = document.getElementById('clearNotesBtn');
 
@@ -3716,9 +3710,18 @@
             localStorage.removeItem('sos_active_notes');
         });
     }
+    // TEXT-TO-SPEECH AMPLIFIER (SPEAKS PROTOCOLS OUT LOUD ON SEARCH)
+    function speakOutLoud(text) {
+        window.speechSynthesis.cancel(); // Instantly flushes old audio tracks to prevent hardware lag
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = 1.0;
+        utterance.volume = 1.0; // Forces maximum speaker output
+        window.speechSynthesis.speak(utterance);
+    }
 
-    // 2. CORE SEARCH ENGINE WITH DESKTOP PUSH NOTIFICATIONS
-    function processSearch() {
+    // 2. CORE SEARCH ENGINE WITH AUTO AUDIO FEEDBACK
+    function processSearch(autoSpeak = false) {
         const value = searchBar.value.trim().toLowerCase();
         resultsHub.innerHTML = '';
 
@@ -3729,19 +3732,17 @@
                 item.name.toLowerCase().includes(value) ||
                 item.symptoms.toLowerCase().includes(value) ||
                 item.category.toLowerCase().includes(value);
-
             const matchesCategory = activeCategory === 'all' ||
                 item.category.toLowerCase().includes(activeCategory.toLowerCase());
-
             return matchesSearch && matchesCategory;
         });
 
         if (matches.length === 0) {
-            resultsHub.innerHTML = '<div class="empty-state">No matching emergency details found. Please check your spelling or search terms.</div>';
+            resultsHub.innerHTML = '<div class="empty-state">No matching emergency details found.</div>';
             return;
         }
 
-        matches.forEach(item => {
+        matches.forEach((item, index) => {
             const element = document.createElement('div');
             element.className = 'card';
             element.innerHTML = `
@@ -3755,91 +3756,120 @@
             `;
             resultsHub.appendChild(element);
 
-            // NATIVE DESKTOP NOTIFICATION BROADCAST
-            if (Notification.permission === "granted" && (item.name.toLowerCase().includes('attack') || item.name.toLowerCase().includes('arrest') || item.name.toLowerCase().includes('shock'))) {
-                new Notification("🚨 CRITICAL RESPONSE PROTOCOL", {
-                    body: `Active emergency view open for: ${item.name}. Review treatment solutions immediately!`,
-                });
+            // Speaks the very first matching profile solution out loud during voice search actions
+            if (index === 0 && autoSpeak) {
+                speakOutLoud(`Emergency first aid protocol for ${item.name}. Solution steps are: ${item.solution}`);
             }
         });
     }
 
-    // ONE-CLICK BLUEPRINT COPY ENGINE
     window.copyBlueprint = function(name) {
         const target = localDiseases.find(d => d.name === name);
         if(target) {
-            const compiledText = `EMERGENCY FIRST AID BLUEPRINT\nCondition: ${target.name}\nCategory: ${target.category}\n\nSymptoms:\n${target.symptoms}\n\nImmediate Actions:\n${target.solution}`;
+            const compiledText = `EMERGENCY FIRST AID BLUEPRINT\nCondition: ${target.name}\nImmediate Actions:\n${target.solution}`;
             navigator.clipboard.writeText(compiledText).then(() => {
-                alert(`📋 Blueprint for "${target.name}" successfully copied to clipboard!`);
+                alert(`📋 Blueprint successfully saved to your clipboard!`);
             });
         }
     };
-       // 3. AUTO-SUGGESTION DROPDOWN ENGINE
+    // 3. AUTO-SUGGESTION DROPDOWN DICTIONARY
     searchBar.addEventListener('input', () => {
         const value = searchBar.value.trim().toLowerCase();
         suggestionsBox.innerHTML = '';
-
-        if (value.length < 2) {
-            suggestionsBox.style.display = 'none';
-            processSearch();
-            return;
-        }
-
+        if (value.length < 2) { suggestionsBox.style.display = 'none'; processSearch(); return; }
         const hints = localDiseases.filter(item => item.name.toLowerCase().includes(value)).slice(0, 5);
-
         if (hints.length > 0) {
             hints.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'suggestion-item';
-                div.innerText = item.name;
-                div.addEventListener('click', () => {
-                    searchBar.value = item.name;
-                    suggestionsBox.style.display = 'none';
-                    processSearch();
-                });
+                const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerText = item.name;
+                div.addEventListener('click', () => { searchBar.value = item.name; suggestionsBox.style.display = 'none'; processSearch(); });
                 suggestionsBox.appendChild(div);
             });
             suggestionsBox.style.display = 'block';
-        } else {
-            suggestionsBox.style.display = 'none';
-        }
+        } else { suggestionsBox.style.display = 'none'; }
         processSearch();
     });
 
-    document.addEventListener('click', (e) => {
-        if (e.target !== searchBar && e.target !== suggestionsBox) {
-            suggestionsBox.style.display = 'none';
+    document.addEventListener('click', (e) => { if (e.target !== searchBar && e.target !== suggestionsBox) { suggestionsBox.style.display = 'none'; } });
+    filterBtns.forEach(btn => { btn.addEventListener('click', (e) => { filterBtns.forEach(b => b.classList.remove('active')); e.target.classList.add('active'); activeCategory = e.target.getAttribute('data-cat'); processSearch(); }); });
+    if (pdfBtn) { pdfBtn.addEventListener('click', () => { window.print(); }); }
+
+    // 7. SOS AUDIO ALARM SIREN (UPGRADED TO HUMAN VOICE "HELP ME" LOOP)
+    function executeVoiceAlarm() {
+        if (alarmInterval) {
+            clearInterval(alarmInterval);
+            alarmInterval = null;
+            window.speechSynthesis.cancel();
+            alarmBtn.innerHTML = "🔊 SOS Audio Alarm";
+            alarmBtn.style.background = "#cc0000";
+            return;
         }
-    });
-
-    // 4. CATEGORY FILTERS
-    filterBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            filterBtns.forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            activeCategory = e.target.getAttribute('data-cat');
-            processSearch();
-        });
-    });
-
-    // 5. VOICE SEARCH
+        alarmBtn.innerHTML = "🛑 STOP SHOUTING";
+        alarmBtn.style.background = "#222";
+        function shoutHelpMe() {
+            window.speechSynthesis.cancel();
+            const emergencyPhrase = new SpeechSynthesisUtterance("Help me! Medical Emergency! Help me!");
+            emergencyPhrase.lang = 'en-US'; emergencyPhrase.rate = 1.1; emergencyPhrase.pitch = 1.0; emergencyPhrase.volume = 1.0;
+            window.speechSynthesis.speak(emergencyPhrase);
+        }
+        shoutHelpMe();
+        alarmInterval = setInterval(shoutHelpMe, 2200);
+    }
+    if (alarmBtn) { alarmBtn.addEventListener('click', executeVoiceAlarm); }
+    // 5. MASTER HANDS-FREE EMERGENCY VOICE COMMAND CONTROLLER (PRONUNCIATION TOLERANT)
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
+        recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.lang = 'en-US';
 
         voiceBtn.addEventListener('click', () => {
-            voiceBtn.innerHTML = "🛑 Listening...";
-            voiceBtn.style.color = "#d32f2f";
-            recognition.start();
+            speakOutLoud("Voice controls active. State your emergency directive now.");
+            setTimeout(() => {
+                voiceBtn.innerHTML = "🛑 Listening...";
+                voiceBtn.style.color = "#d32f2f";
+                recognition.start();
+            }, 1300);
         });
 
         recognition.onresult = (event) => {
-            searchBar.value = event.results.transcript;
-            voiceBtn.innerHTML = "🎙️";
-            voiceBtn.style.color = "";
-            processSearch();
+            const command = event.results.transcript.toLowerCase().trim();
+            voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = "";
+
+            // PRONUNCIATION-TOLERANT MULTI-KEYWORD FUZZY ROUTING MATRIX
+            const isMapCommand = command.includes("hospital") || command.includes("map") || command.includes("hospit") || command.includes("location") || command.includes("mappa");
+            const isWhatsAppCommand = command.includes("whatsapp") || command.includes("message") || command.includes("send") || command.includes("watsapp") || command.includes("watsp");
+            const isPoliceCommand = command.includes("police") || command.includes("112") || command.includes("emergency") || command.includes("pulis") || command.includes("polizia");
+            const isAmbulanceCommand = command.includes("ambulance") || command.includes("118") || command.includes("medical") || command.includes("ambulan") || command.includes("doctor") || command.includes("soccorso");
+            const isAlarmCommand = command.includes("alarm") || command.includes("siren") || command.includes("shout") || command.includes("sound") || command.includes("help");
+            const isStopAlarmCommand = command.includes("stop") || command.includes("quiet") || command.includes("silent") || command.includes("mute") || command.includes("basta");
+
+            if (isMapCommand) {
+                speakOutLoud("Opening closest hospital navigation grid.");
+                setTimeout(() => { window.open("https://google.com", '_blank'); }, 1000);
+            }
+            else if (isWhatsAppCommand) {
+                speakOutLoud("Redirecting location alert to WhatsApp dispatch.");
+                setTimeout(() => { window.open("https://whatsapp.com!", '_blank'); }, 1000);
+            }
+            else if (isPoliceCommand) {
+                speakOutLoud("Dialing national emergency systems.");
+                setTimeout(() => { location.href = "tel:112"; }, 1000);
+            }
+            else if (isAmbulanceCommand) {
+                speakOutLoud("Dialing regional medical dispatch.");
+                setTimeout(() => { location.href = "tel:118"; }, 1000);
+            }
+            else if (isAlarmCommand) {
+                if (!alarmInterval) { executeVoiceAlarm(); }
+            }
+            else if (isStopAlarmCommand) {
+                if (alarmInterval) { executeVoiceAlarm(); }
+            }
+            else {
+                // If it's not a shortcut directive, search the 500 records directly
+                searchBar.value = command;
+                processSearch(true);
+            }
         };
 
         recognition.onerror = () => { voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = ""; };
@@ -3848,39 +3878,10 @@
         voiceBtn.style.display = 'none';
     }
 
-    // 6. PDF EXPORT COMPONENT INTERFACE (NATIVE PRINT ENGINE)
-    if (pdfBtn) { pdfBtn.addEventListener('click', () => { window.print(); }); }
-
-    // 7. SOS AUDIO ALARM SIREN (UPGRADED TO HUMAN VOICE "HELP ME" LOOP)
-    if (alarmBtn) {
-        alarmBtn.addEventListener('click', () => {
-            if (alarmInterval) {
-                clearInterval(alarmInterval);
-                alarmInterval = null;
-                window.speechSynthesis.cancel();
-                alarmBtn.innerHTML = "🔊 SOS Audio Alarm";
-                alarmBtn.style.background = "#cc0000";
-                return;
-            }
-
-            alarmBtn.innerHTML = "🛑 STOP SHOUTING";
-            alarmBtn.style.background = "#222";
-
-            function shoutHelpMe() {
-                window.speechSynthesis.cancel();
-                const emergencyPhrase = new SpeechSynthesisUtterance("Help me! Medical Emergency! Help me!");
-                emergencyPhrase.lang = 'en-US';
-                emergencyPhrase.rate = 1.1;
-                emergencyPhrase.pitch = 1.0;
-                emergencyPhrase.volume = 1.0;
-                window.speechSynthesis.speak(emergencyPhrase);
-            }
-
-            shoutHelpMe();
-            alarmInterval = setInterval(shoutHelpMe, 2200);
-        });
-    }
     // 8. SOS CARD GENERATOR
+    const sosCardBtn = document.getElementById('sosCardBtn');
+    const sosCardDisplay = document.getElementById('sosCardDisplay');
+    const sosTimestamp = document.getElementById('sosTimestamp');
     if (sosCardBtn) {
         sosCardBtn.addEventListener('click', () => {
             if (sosCardDisplay.style.display === 'none') {
@@ -3888,41 +3889,22 @@
                 sosTimestamp.innerHTML = `⚠️ Incident Registered At: ${now.toLocaleTimeString()} | Status: Active Local Log`;
                 sosCardDisplay.style.display = 'block';
                 sosCardBtn.innerHTML = "❌ Hide SOS Card";
-            } else {
-                sosCardDisplay.style.display = 'none';
-                sosCardBtn.innerHTML = "📋 Generate SOS Card";
-            }
+            } else { sosCardDisplay.style.display = 'none'; sosCardBtn.innerHTML = "📋 Generate SOS Card"; }
         });
     }
 
     // 11. INFINITE OFFLINE COMPATIBILITY ENGINE (PWA HYBRID LOGIC)
     const pwaStatusBadge = document.getElementById('pwaStatusBadge');
-    window.addEventListener('online', () => {
-        if (pwaStatusBadge) {
-            pwaStatusBadge.innerHTML = "🌍 ONLINE MODE: 500 Emergency Records Cached Successfully";
-            pwaStatusBadge.style.color = "#4caf50";
-            pwaStatusBadge.style.background = "rgba(76,175,80,0.1)";
-        }
-    });
-    window.addEventListener('offline', () => {
-        if (pwaStatusBadge) {
-            pwaStatusBadge.innerHTML = "📡 OFFLINE RADAR ACTIVE: Searching 500 Local Records Without Internet";
-            pwaStatusBadge.style.color = "#ff9800";
-            pwaStatusBadge.style.background = "rgba(255,152,0,0.1)";
-        }
-    });
+    window.addEventListener('online', () => { if (pwaStatusBadge) { pwaStatusBadge.innerHTML = "🌍 ONLINE MODE: 500 Emergency Records Cached Successfully"; pwaStatusBadge.style.color = "#4caf50"; pwaStatusBadge.style.background = "rgba(76,175,80,0.1)"; } });
+    window.addEventListener('offline', () => { if (pwaStatusBadge) { pwaStatusBadge.innerHTML = "📡 OFFLINE RADAR ACTIVE: Searching 500 Local Records Without Internet"; pwaStatusBadge.style.color = "#ff9800"; pwaStatusBadge.style.background = "rgba(255,152,0,0.1)"; } });
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             const blobCode = `
                 const CACHE_NAME = 'emergency-guide-v1';
                 const urlsToCache = [location.href];
-                self.addEventListener('install', (e) => {
-                    e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(urlsToCache)));
-                });
-                self.addEventListener('fetch', (e) => {
-                    e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request)));
-                });
+                self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(urlsToCache))); });
+                self.addEventListener('fetch', (e) => { e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request))); });
             `;
             const blob = new Blob([blobCode], { type: 'application/javascript' });
             const blobURL = URL.createObjectURL(blob);
