@@ -3657,7 +3657,7 @@
   }
 
     ];
-    const searchBar = document.getElementById('searchBar');
+        const searchBar = document.getElementById('searchBar');
     const resultsHub = document.getElementById('resultsHub');
     const themeToggle = document.getElementById('themeToggle');
     const voiceBtn = document.getElementById('voiceBtn');
@@ -3669,6 +3669,7 @@
     let activeCategory = 'all';
     let alarmInterval = null;
     let recognition = null;
+    let isVoiceSystemActive = false; // Tracks continuous voice session state
 
     // 1. DYNAMIC COLOR MODE (Dark/Light Switch Layout Handler)
     themeToggle.addEventListener('click', () => {
@@ -3710,12 +3711,16 @@
         });
     }
     // TEXT-TO-SPEECH AMPLIFIER (SPEAKS PROTOCOLS OUT LOUD ON USER GESTURE)
-    function speakOutLoud(text) {
+    function speakOutLoud(text, callback = null) {
         window.speechSynthesis.cancel(); // Instantly flushes old audio tracks to prevent hardware lag
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'en-US';
         utterance.rate = 1.0;
         utterance.volume = 1.0; // Forces maximum hardware speaker output
+
+        if (callback) {
+            utterance.onend = callback; // Pauses voice mic while reading, wakes up mic when done
+        }
         window.speechSynthesis.speak(utterance);
     }
 
@@ -3723,7 +3728,11 @@
     window.readCardOutLoud = function(name) {
         const target = localDiseases.find(d => d.name === name);
         if (target) {
-            speakOutLoud(`Emergency target condition selected. ${target.name}. Key symptoms: ${target.symptoms}. Immediate first aid instructions: ${target.solution}`);
+            // Temporarily pauses microphone to prevent the app from listening to its own voice
+            if (recognition && isVoiceSystemActive) { recognition.stop(); }
+            speakOutLoud(`Emergency condition selected: ${target.name}. Key symptoms: ${target.symptoms}. Immediate first aid instructions: ${target.solution}`, () => {
+                if (isVoiceSystemActive && recognition) { recognition.start(); }
+            });
         }
     };
 
@@ -3746,7 +3755,11 @@
 
         if (matches.length === 0) {
             resultsHub.innerHTML = '<div class="empty-state">No matching emergency details found.</div>';
-            if (autoSpeak) { speakOutLoud("No matching medical details found. Please check spelling."); }
+            if (autoSpeak) {
+                speakOutLoud("No matching medical details found. Please state another term.", () => {
+                    if (isVoiceSystemActive && recognition) { recognition.start(); }
+                });
+            }
             return;
         }
 
@@ -3768,7 +3781,10 @@
 
             // Automatically speaks the first matching profile solution out loud during voice search actions
             if (index === 0 && autoSpeak) {
-                speakOutLoud(`Found protocol for ${item.name}. Solution steps are: ${item.solution}`);
+                if (recognition && isVoiceSystemActive) { recognition.stop(); }
+                speakOutLoud(`Found protocol for ${item.name}. Immediate treatment is: ${item.solution}`, () => {
+                    if (isVoiceSystemActive && recognition) { recognition.start(); }
+                });
             }
         });
     }
@@ -3811,8 +3827,10 @@
             window.speechSynthesis.cancel();
             alarmBtn.innerHTML = "🔊 SOS Audio Alarm";
             alarmBtn.style.background = "#cc0000";
+            if (isVoiceSystemActive && recognition) { recognition.start(); }
             return;
         }
+        if (recognition && isVoiceSystemActive) { recognition.stop(); }
         alarmBtn.innerHTML = "🛑 STOP SHOUTING";
         alarmBtn.style.background = "#222";
         function shoutHelpMe() {
@@ -3825,28 +3843,35 @@
         alarmInterval = setInterval(shoutHelpMe, 2200);
     }
     if (alarmBtn) { alarmBtn.addEventListener('click', executeVoiceAlarm); }
-    // 5. MASTER HANDS-FREE GLOBAL VOICE CONTROLLER (WITH CUSTOM "TELL ME PLEASE" AUDIO PROMPT)
+    // 5. MASTER CONTINUOUS VOICE COMMAND ENGINE (HANDS-FREE RUNTIME LOOP)
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        recognition.continuous = false; // Structured as false to process discrete sentence tokens accurately
         recognition.lang = 'en-US';
 
         voiceBtn.addEventListener('click', () => {
-            // 🌟 CUSTOM AUDIO PROMPT TRIC: Replaces default generic noise with a clear human request
-            speakOutLoud("Tell me please");
+            if (isVoiceSystemActive) {
+                // If clicked while active, turns off the continuous listening module completely
+                isVoiceSystemActive = false;
+                recognition.stop();
+                window.speechSynthesis.cancel();
+                voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = "";
+                speakOutLoud("Voice system deactivated.");
+                return;
+            }
 
-            // Wait 1.1 seconds for the phrase to finish speaking before opening the microphone pipeline cleanly
-            setTimeout(() => {
+            isVoiceSystemActive = true;
+            speakOutLoud("Tell me please", () => {
                 voiceBtn.innerHTML = "🛑 Listening...";
                 voiceBtn.style.color = "#d32f2f";
                 recognition.start();
-            }, 1100);
+            });
         });
 
         recognition.onresult = (event) => {
-            const command = event.results.transcript.toLowerCase().trim();
-            voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = "";
+            const command = event.results[transcriptCode = event.results.length - 1][0].transcript.toLowerCase().trim();
+            voiceBtn.innerHTML = "🎙️ (Active)"; voiceBtn.style.color = "#4caf50";
 
             // PRONUNCIATION-TOLERANT MULTI-KEYWORD FUZZY ROUTING MATRIX
             const isMapCommand = command.includes("hospital") || command.includes("map") || command.includes("hospit") || command.includes("location") || command.includes("mappa");
@@ -3857,18 +3882,22 @@
             const isStopAlarmCommand = command.includes("stop") || command.includes("quiet") || command.includes("silent") || command.includes("mute") || command.includes("basta");
 
             if (isMapCommand) {
+                if (recognition) recognition.stop();
                 speakOutLoud("Opening closest hospital navigation grid.");
                 setTimeout(() => { window.open("https://google.com", '_blank'); }, 1000);
             }
             else if (isWhatsAppCommand) {
+                if (recognition) recognition.stop();
                 speakOutLoud("Redirecting location alert to WhatsApp dispatch.");
                 setTimeout(() => { window.open("https://whatsapp.com!", '_blank'); }, 1000);
             }
             else if (isPoliceCommand) {
+                if (recognition) recognition.stop();
                 speakOutLoud("Dialing national emergency systems.");
                 setTimeout(() => { location.href = "tel:112"; }, 1000);
             }
             else if (isAmbulanceCommand) {
+                if (recognition) recognition.stop();
                 speakOutLoud("Dialing regional medical dispatch.");
                 setTimeout(() => { location.href = "tel:118"; }, 1000);
             }
@@ -3879,14 +3908,29 @@
                 if (alarmInterval) { executeVoiceAlarm(); }
             }
             else {
-                // Default search route: transforms vocal command inputs into dictionary lookups
+                // Treats voice input directly as a disease search term and triggers automatic vocal readout
                 searchBar.value = command;
                 processSearch(true);
             }
         };
 
-        recognition.onerror = () => { voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = ""; };
-        recognition.onend = () => { voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = ""; };
+        // 🌟 AUTOMATIC RUNTIME REBOOT RE-LOOP ENGINE (Keeps the website constantly listening)
+        recognition.onend = () => {
+            if (isVoiceSystemActive && !alarmInterval && !window.speechSynthesis.speaking) {
+                voiceBtn.innerHTML = "🛑 Listening...";
+                voiceBtn.style.color = "#d32f2f";
+                recognition.start(); // Revives the listening pipeline instantly without clicking again
+            } else if (isVoiceSystemActive) {
+                voiceBtn.innerHTML = "🎙️ (Idle)";
+                voiceBtn.style.color = "#ff9800";
+            } else {
+                voiceBtn.innerHTML = "🎙️"; voiceBtn.style.color = "";
+            }
+        };
+
+        recognition.onerror = (e) => {
+            if(e.error === 'not-allowed') { isVoiceSystemActive = false; }
+        };
     } else {
         voiceBtn.style.display = 'none';
     }
